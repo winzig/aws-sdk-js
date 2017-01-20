@@ -88,8 +88,9 @@ describe 'AWS.Credentials', ->
 
 if AWS.util.isNode()
   describe 'AWS.EnvironmentCredentials', ->
-    beforeEach ->
+    beforeEach (done) ->
       process.env = {}
+      done()
 
     afterEach ->
       process.env = {}
@@ -171,20 +172,24 @@ if AWS.util.isNode()
         process.env.HOMEDRIVE = 'd:/'
         process.env.HOMEPATH = 'homepath'
         creds = new AWS.SharedIniFileCredentials()
-        expect(creds.filename).to.equal('d:/homepath/.aws/credentials')
+        creds.get();
+        expect(creds.filename).to.match(/d:[\/\\]homepath[\/\\].aws[\/\\]credentials/)
 
       it 'uses default HOMEDRIVE of C:/', ->
         process.env.HOMEPATH = 'homepath'
         creds = new AWS.SharedIniFileCredentials()
-        expect(creds.filename).to.equal('C:/homepath/.aws/credentials')
+        creds.get();
+        expect(creds.filename).to.match(/C:[\/\\]homepath[\/\\].aws[\/\\]credentials/)
 
       it 'uses USERPROFILE if HOME is not set', ->
         process.env.USERPROFILE = '/userprofile'
         creds = new AWS.SharedIniFileCredentials()
-        expect(creds.filename).to.equal('/userprofile/.aws/credentials')
+        creds.get();
+        expect(creds.filename).to.match(/[\/\\]userprofile[\/\\].aws[\/\\]credentials/)
 
       it 'can override filename as a constructor argument', ->
         creds = new AWS.SharedIniFileCredentials(filename: '/etc/creds')
+        creds.get();
         expect(creds.filename).to.equal('/etc/creds')
 
     describe 'loading', ->
@@ -200,8 +205,9 @@ if AWS.util.isNode()
         helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
 
         creds = new AWS.SharedIniFileCredentials()
+        creds.get();
         validateCredentials(creds)
-        expect(AWS.util.readFileSync.calls[0].arguments[0]).to.equal('/home/user/.aws/credentials')
+        expect(AWS.util.readFileSync.calls[0].arguments[0]).to.match(/[\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials/)
 
       it 'loads the default profile if AWS_PROFILE is empty', ->
         process.env.AWS_PROFILE = ''
@@ -214,6 +220,7 @@ if AWS.util.isNode()
         helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
 
         creds = new AWS.SharedIniFileCredentials()
+        creds.get();
         validateCredentials(creds)
 
       it 'accepts a profile name parameter', ->
@@ -226,6 +233,7 @@ if AWS.util.isNode()
         spy = helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
 
         creds = new AWS.SharedIniFileCredentials(profile: 'foo')
+        creds.get();
         validateCredentials(creds)
 
       it 'sets profile based on ENV', ->
@@ -239,6 +247,7 @@ if AWS.util.isNode()
         spy = helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
 
         creds = new AWS.SharedIniFileCredentials()
+        creds.get();
         validateCredentials(creds)
 
     describe 'refresh', ->
@@ -254,6 +263,7 @@ if AWS.util.isNode()
         helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
 
         creds = new AWS.SharedIniFileCredentials()
+        creds.get();
         validateCredentials(creds, 'RELOADED', 'RELOADED', 'RELOADED')
 
       it 'fails if credentials are not in the file', ->
@@ -261,10 +271,104 @@ if AWS.util.isNode()
         helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
 
         new AWS.SharedIniFileCredentials().refresh (err) ->
-          expect(err.message).to.equal('Credentials not set in /home/user/.aws/credentials using profile default')
+          expect(err.message).to.match(/Profile default not found in [\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials/)
 
         expect(-> new AWS.SharedIniFileCredentials().refresh()).
-          to.throw('Credentials not set in /home/user/.aws/credentials using profile default')
+          to.throw(/Profile default not found in [\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials/)
+
+  describe 'loadRoleProfile', ->
+    beforeEach -> 
+      process.env.HOME = '/home/user'
+    
+    it 'will fail if assume role is disabled', ->
+      mock = '''
+      [default]
+      aws_access_key_id = akid
+      aws_secret_access_key = secret
+      role_arn = arn
+      '''
+      helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
+      creds = new AWS.SharedIniFileCredentials({disableAssumeRole: true})
+      creds.refresh (err) ->
+        expect(err.message).to.match(/Role assumption profiles are disabled. Failed to load profile default from [\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials/)
+      
+    it 'will fail if no source profile is specified', ->
+      mock = '''
+      [default]
+      aws_access_key_id = akid
+      aws_secret_access_key = secret
+      role_arn = arn
+      '''
+      helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
+    
+      creds = new AWS.SharedIniFileCredentials()
+      creds.refresh (err) ->
+        expect(err.message).to.match(/source_profile is not set in [\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials using profile default/)
+    
+    it 'will fail if source profile config is not defined', ->
+      mock = '''
+      [default]
+      aws_access_key_id = akid
+      aws_secret_access_key = secret
+      role_arn = arn
+      source_profile = fake
+      '''
+      helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
+      
+      creds = new AWS.SharedIniFileCredentials()
+      creds.refresh (err) ->
+        expect(err.message).to.match(/source_profile fake set in [\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials using profile default does not exist/)
+    
+    it 'will fail if source profile config lacks credentials', ->
+      mock = '''
+      [default]
+      aws_access_key_id = akid
+      aws_secret_access_key = secret
+      role_arn = arn
+      source_profile = foo
+      [foo]
+      aws_access_key_id = akid2
+      '''
+      helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
+      
+      creds = new AWS.SharedIniFileCredentials()
+      creds.refresh (err) ->
+        expect(err.message).to.match(/Credentials not set in source_profile foo set in [\/\\]home[\/\\]user[\/\\].aws[\/\\]credentials using profile default/)
+
+    it 'will return credentials for assumed role', (done) ->
+      mock = '''
+      [default]
+      aws_access_key_id = akid
+      aws_secret_access_key = secret
+      role_arn = arn
+      external
+      asda
+      source_profile = foo
+      [foo]
+      aws_access_key_id = akid2
+      aws_secret_access_key = secret2
+      '''
+      helpers.spyOn(AWS.util, 'readFileSync').andReturn(mock)
+      helpers.mockHttpResponse 200, {}, '''
+      <AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+        <AssumeRoleResult>
+          <Credentials>
+            <AccessKeyId>KEY</AccessKeyId>
+            <SecretAccessKey>SECRET</SecretAccessKey>
+            <SessionToken>TOKEN</SessionToken>
+            <Expiration>1970-01-01T00:00:00.000Z</Expiration>
+          </Credentials>
+        </AssumeRoleResult>
+      </AssumeRoleResponse>
+      '''
+      creds = new AWS.SharedIniFileCredentials()
+      expect(creds.roleArn).to.equal('arn')
+      creds.refresh (err) ->
+        expect(creds.accessKeyId).to.equal('KEY')
+        expect(creds.secretAccessKey).to.equal('SECRET')
+        expect(creds.sessionToken).to.equal('TOKEN')
+        expect(creds.expireTime).to.eql(new Date(0))
+        done()
 
   describe 'AWS.EC2MetadataCredentials', ->
     creds = null
@@ -321,6 +425,128 @@ if AWS.util.isNode()
           creds.refresh ->
             creds.refresh ->
               expect(spy.calls.length).to.equal(4)
+
+  describe 'AWS.ECSCredentials', ->
+    creds = null
+    responseData = {
+      AccessKeyId: 'KEY',
+      SecretAccessKey: 'SECRET',
+      Token: 'TOKEN',
+      Expiration: (new Date(0)).toISOString()
+    }
+
+    beforeEach ->
+      creds = new AWS.ECSCredentials(host: 'host')
+      process.env = {}
+
+    afterEach ->
+      process.env = {}
+
+    mockEndpoint = (expireTime) ->
+      helpers.spyOn(creds, 'request').andCallFake (path, cb) ->
+          expiration = expireTime.toISOString()
+          cb null, JSON.stringify(AWS.util.merge(responseData, {Expiration: expiration}))
+
+    describe 'constructor', ->
+      it 'allows passing of options', ->
+        expect(creds.host).to.equal('host')
+
+      it 'does not modify options object', ->
+        opts = {}
+        creds = new AWS.ECSCredentials(opts)
+        expect(opts).to.eql({})
+
+      it 'allows setting timeout', ->
+        opts = httpOptions: timeout: 5000
+        creds = new AWS.ECSCredentials(opts)
+        expect(creds.httpOptions.timeout).to.equal(5000)
+
+    describe 'getECSRelativeUri', ->
+      it 'returns undefined when process is not available', ->
+        process_copy = process
+        process = undefined
+        expect(creds.getECSRelativeUri()).to.equal(undefined)
+        process = process_copy
+
+      it 'returns undefined when relative URI environment variable not set', ->
+        expect(creds.getECSRelativeUri()).to.equal(undefined)
+
+      it 'returns relative URI when environment variable is set', ->
+        process.env['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] = '/path'
+        expect(creds.getECSRelativeUri()).to.equal('/path')
+
+      it 'returns relative URI from prototype when environment variable is set', ->
+        process.env['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] = '/path'
+        expect(AWS.ECSCredentials.prototype.getECSRelativeUri()).to.equal('/path')
+
+    describe 'credsFormatIsValid', ->
+      it 'returns false when data is missing required property', ->
+        incompleteData = {AccessKeyId: 'KEY', SecretAccessKey: 'SECRET', Token: 'TOKEN'}
+        expect(creds.credsFormatIsValid(incompleteData)).to.be.false
+
+      it 'returns true when data has all required properties', ->
+        expect(creds.credsFormatIsValid(responseData)).to.be.true
+
+    describe 'needsRefresh', ->
+      it 'can be expired based on expire time from URI endpoint', ->
+        process.env['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] = '/path'
+        spy = mockEndpoint(new Date(0))
+        creds.refresh(->)
+        expect(spy.calls.length).to.equal(1)
+        expect(creds.needsRefresh()).to.equal(true)
+
+    describe 'refresh', ->
+      it 'loads credentials from specified relative URI', ->
+        callbackErr = null
+        process.env['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] = '/path'
+        spy = mockEndpoint(new Date(AWS.util.date.getDate().getTime() + 100000))
+        creds.refresh((err) -> callbackErr = err)
+        expect(spy.calls.length).to.equal(1)
+        expect(callbackErr).to.be.null
+        expect(creds.accessKeyId).to.equal('KEY')
+        expect(creds.secretAccessKey).to.equal('SECRET')
+        expect(creds.sessionToken).to.equal('TOKEN')
+        expect(creds.needsRefresh()).to.equal(false)
+
+      it 'passes an error to the callback when environment variable not set', ->
+        callbackErr = null
+        spy = mockEndpoint(new Date(AWS.util.date.getDate().getTime() + 100000))
+        creds.refresh((err) -> callbackErr = err)
+        expect(spy.calls.length).to.equal(0)
+        expect(callbackErr).to.not.be.null
+
+      it 'retries up to specified maxRetries for timeout errors', (done) ->
+        process.env['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] = '/path'
+        options = {maxRetries: 3}
+        creds = new AWS.ECSCredentials(options)
+        httpClient = AWS.HttpClient.getInstance()
+        spy = helpers.spyOn(httpClient, 'handleRequest').andCallFake (httpReq, httpOp, cb, errCb) ->
+          errCb({code: 'TimeoutError'})
+        creds.refresh (err) ->
+          expect(err).to.not.be.null
+          expect(err.code).to.equal('TimeoutError')
+          expect(spy.calls.length).to.equal(4)
+          done()
+
+      it 'makes only one request when multiple calls are made before first one finishes', (done) ->
+        concurrency = countdown = 10
+        process.env['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] = '/path'
+        spy = helpers.spyOn(AWS.ECSCredentials.prototype, 'request').andCallFake (path, cb) ->
+          respond = ->
+            cb null, JSON.stringify(responseData)
+          process.nextTick(respond)
+        providers = []
+        callRefresh = (ind) ->
+          providers[ind] = new AWS.ECSCredentials(host: 'host')
+          providers[ind].refresh (err) ->
+            expect(err).to.equal(null)
+            expect(providers[ind].accessKeyId).to.equal('KEY')
+            countdown--
+            if countdown == 0
+              expect(spy.calls.length).to.equal(1)
+              done()
+        for x in [1..concurrency]
+          callRefresh(x - 1)
 
 describe 'AWS.TemporaryCredentials', ->
   creds = null
@@ -634,6 +860,20 @@ describe 'AWS.CognitoIdentityCredentials', ->
       expect(creds.identityId).not.to.exist
       expect(creds.params.IdentityId).not.to.exist
 
+  describe 'clearIdOnNotAuthorized', ->
+    
+    it 'should call clearCachedId if user is not authorized', ->
+      clearCache = helpers.spyOn(creds,'clearCachedId')
+      idErr = {code: 'NotAuthorizedException'}
+      creds.clearIdOnNotAuthorized(idErr)
+      expect(clearCache.calls.length).to.equal(1)
+      
+    it 'should not call clearCachedId if user is authorized', ->
+      clearCache = helpers.spyOn(creds,'clearCachedId')
+      idErr = {code: 'TEST'}
+      creds.clearIdOnNotAuthorized(idErr)
+      expect(clearCache.calls.length).to.equal(0)
+
   describe 'createClients', ->
     beforeEach -> setupCreds()
 
@@ -756,7 +996,18 @@ describe 'AWS.CognitoIdentityCredentials', ->
       expect(creds.cacheId.calls.length).to.equal(0)
       expect(creds.getStorage('id')).not.to.exist
 
-    it 'clears cache if getId fails', ->
+    it 'clears cache if getId fails for unauthorized user', ->
+      creds.setStorage('id', 'MYID')
+      helpers.mockResponses [
+        {data: {IdentityId: 'IDENTITY-ID'}, error: null},
+        {data: null, error: {message : 'INVALID SERVICE', code: 'NotAuthorizedException'} }
+      ]
+      helpers.spyOn(creds.webIdentityCredentials, 'refresh').andCallFake(->)
+      creds.refresh (err) -> expect(err.message).to.equal('INVALID SERVICE')
+      expect(creds.cacheId.calls.length).to.equal(0)
+      expect(creds.getStorage('id')).not.to.exist
+
+    it 'does not clear cache if getId fails for authorized user', ->
       creds.setStorage('id', 'MYID')
       helpers.mockResponses [
         {data: {IdentityId: 'IDENTITY-ID'}, error: null},
@@ -765,9 +1016,20 @@ describe 'AWS.CognitoIdentityCredentials', ->
       helpers.spyOn(creds.webIdentityCredentials, 'refresh').andCallFake(->)
       creds.refresh (err) -> expect(err.message).to.equal('INVALID SERVICE')
       expect(creds.cacheId.calls.length).to.equal(0)
+      expect(creds.getStorage('id')).to.exist
+
+    it 'clears cache if getOpenIdToken fails for unauthorized user', ->
+      creds.setStorage('id', 'MYID')
+      helpers.mockResponses [
+        {data: {IdentityId: 'IDENTITY-ID'}, error: null},
+        {data: null, error: {message : 'INVALID SERVICE', code: 'NotAuthorizedException'}}
+      ]
+      helpers.spyOn(creds.webIdentityCredentials, 'refresh').andCallFake(->)
+      creds.refresh (err) -> expect(err.message).to.equal('INVALID SERVICE')
+      expect(creds.cacheId.calls.length).to.equal(0)
       expect(creds.getStorage('id')).not.to.exist
 
-    it 'clears cache if getOpenIdToken fails', ->
+    it 'does not clear cache if getOpenIdToken fails for authorized user', ->
       creds.setStorage('id', 'MYID')
       helpers.mockResponses [
         {data: {IdentityId: 'IDENTITY-ID'}, error: null},
@@ -776,9 +1038,20 @@ describe 'AWS.CognitoIdentityCredentials', ->
       helpers.spyOn(creds.webIdentityCredentials, 'refresh').andCallFake(->)
       creds.refresh (err) -> expect(err.message).to.equal('INVALID SERVICE')
       expect(creds.cacheId.calls.length).to.equal(0)
+      expect(creds.getStorage('id')).to.equal('MYID')
+
+    it 'clears cache if getCredentialsForIdentity fails for unauthorized user', ->
+      delete creds.cognito.config.params.RoleArn
+      creds.setStorage('id', 'MYID')
+      helpers.mockResponses [
+        {data: {IdentityId: 'IDENTITY-ID'}, error: null},
+        {data: null, error: {message : 'INVALID SERVICE', code: 'NotAuthorizedException'}}
+      ]
+      creds.refresh (err) -> expect(err.message).to.equal('INVALID SERVICE')
+      expect(creds.cacheId.calls.length).to.equal(0)
       expect(creds.getStorage('id')).not.to.exist
 
-    it 'clears cache if getCredentialsForIdentity fails', ->
+    it 'does not clear cache if getCredentialsForIdentity fails for authorized user', ->
       delete creds.cognito.config.params.RoleArn
       creds.setStorage('id', 'MYID')
       helpers.mockResponses [
@@ -787,7 +1060,7 @@ describe 'AWS.CognitoIdentityCredentials', ->
       ]
       creds.refresh (err) -> expect(err.message).to.equal('INVALID SERVICE')
       expect(creds.cacheId.calls.length).to.equal(0)
-      expect(creds.getStorage('id')).not.to.exist
+      expect(creds.getStorage('id')).to.equal('MYID')
 
     it 'does try to load creds second time if service request failed', ->
       reqs = helpers.mockResponses [
@@ -863,3 +1136,63 @@ describe 'AWS.CognitoIdentityCredentials', ->
         creds.params.LoginId = 'LOGINIDA'
         creds.clearCachedId()
 
+      it 'allows access to cached identityId even after a failed attempt to refresh credentials', ->
+        creds.setStorage('id', 'MYID')
+        expect(creds.identityId).to.equal('MYID')
+
+  if typeof Promise == 'function'
+    describe 'promises', ->
+      err = null
+      mockCred = null
+
+      catchFunction = (e) ->
+        err = e
+
+      beforeEach ->
+        AWS.util.addPromises(AWS.Credentials, Promise)
+
+      beforeEach ->
+        err = null
+        mockCred = new helpers.MockCredentialsProvider()
+
+      describe 'getPromise', ->
+        spy = null
+
+        beforeEach ->
+          spy = helpers.spyOn(mockCred, 'refresh').andCallThrough()
+
+        it 'resolves when get is successful', ->
+          # if a promise is returned from a test, then done callback not needed
+          # and next test will wait for promise to resolve before running
+          return mockCred.getPromise().then ->
+            expect(spy.calls.length).to.equal(1)
+            expect(err).to.be.null
+            expect(mockCred.accessKeyId).to.equal('akid')
+            expect(mockCred.secretAccessKey).to.equal('secret')
+
+        it 'rejects when get is unsuccessful', ->
+          mockCred.forceRefreshError = true
+          return mockCred.getPromise().catch(catchFunction).then ->
+            expect(spy.calls.length).to.equal(1)
+            expect(err).to.not.be.null
+            expect(err.code).to.equal('MockCredentialsProviderFailure')
+            expect(err.message).to.equal('mock credentials refresh error')
+            expect(mockCred.accessKeyId).to.be.undefined
+            expect(mockCred.secretAccessKey).to.be.undefined
+
+      describe 'refreshPromise', ->
+        it 'resolves when refresh is successful', ->
+          refreshError = false
+          return mockCred.refreshPromise().then ->
+            expect(err).to.be.null
+            expect(mockCred.accessKeyId).to.equal('akid')
+            expect(mockCred.secretAccessKey).to.equal('secret')
+
+        it 'rejects when refresh is unsuccessful', ->
+          mockCred.forceRefreshError = true
+          return mockCred.refreshPromise().catch(catchFunction).then ->
+            expect(err).to.not.be.null
+            expect(err.code).to.equal('MockCredentialsProviderFailure')
+            expect(err.message).to.equal('mock credentials refresh error')
+            expect(mockCred.accessKeyId).to.be.undefined
+            expect(mockCred.secretAccessKey).to.be.undefined

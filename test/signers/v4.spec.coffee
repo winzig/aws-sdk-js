@@ -1,9 +1,6 @@
 helpers = require('../helpers')
 AWS = helpers.AWS
 
-beforeEach ->
-  helpers.spyOn(AWS.util, 'userAgent').andReturn('aws-sdk-js/0.1')
-
 buildRequest = ->
   ddb = new AWS.DynamoDB({region: 'region', endpoint: 'localhost', apiVersion: '2011-12-05'})
   req = ddb.makeRequest('listTables', {ExclusiveStartTableName: 'bår'})
@@ -12,7 +9,17 @@ buildRequest = ->
   req.httpRequest
 
 buildSigner = (request, signatureCache) ->
-  return new AWS.Signers.V4(request || buildRequest(), 'dynamodb', signatureCache || true)
+  if typeof signatureCache != 'boolean'
+    signatureCache = true
+  return new AWS.Signers.V4(request || buildRequest(), 'dynamodb', signatureCache)
+
+buildSignerFromService = (signatureCache) ->
+  if typeof signatureCache != 'boolean'
+    signatureCache = true
+  ddb = new AWS.DynamoDB({region: 'region', endpoint: 'localhost', apiVersion: '2011-12-05'})
+  signer = buildSigner(null, signatureCache)
+  signer.setServiceClientId(ddb._clientId)
+  return signer
 
 describe 'AWS.Signers.V4', ->
   date = new Date(1935346573456)
@@ -25,6 +32,7 @@ describe 'AWS.Signers.V4', ->
   signer = null
 
   beforeEach ->
+    helpers.spyOn(AWS.util, 'userAgent').andReturn('aws-sdk-js/0.1')
     creds = accessKeyId: 'akid', secretAccessKey: 'secret', sessionToken: 'session'
     signer = buildSigner()
     signer.addAuthorization(creds, date)
@@ -34,7 +42,6 @@ describe 'AWS.Signers.V4', ->
       req = buildRequest()
       signer = buildSigner(req)
       expect(signer.request).to.equal(req)
-
   describe 'addAuthorization', ->
     headers = {
       'Content-Type': 'application/x-amz-json-1.0',
@@ -75,6 +82,26 @@ describe 'AWS.Signers.V4', ->
         calls = AWS.util.crypto.hmac.calls
         callCount = calls.length
 
+      it 'will cache a maximum of 50 clients', (done) ->
+        maxCacheEntries = 50
+        clientSigners = (buildSignerFromService() for i in [0..maxCacheEntries-1])
+        callCount = calls.length
+        #Get signature for all clients to store them in cache
+        (clientSigners[i].signature(creds, datetime) for i in [0..clientSigners.length-1])
+        expect(calls.length).to.equal(callCount + (5 * maxCacheEntries))
+        #Signer should use cache
+        callCount = calls.length
+        clientSigners[0].signature(creds, datetime)
+        expect(calls.length).to.equal(callCount + 1)
+        #add a new signer, pushing past cache limit
+        newestSigner = buildSignerFromService()
+        #old signer shouldn't be using cache anymore
+        callCount = calls.length
+        clientSigners[0].signature(creds, datetime)
+        expect(calls.length).to.equal(callCount + 5)
+        done()
+        
+      #Calling signer.signature should call hmac 1 time when caching, and 5 times when not caching
       it 'caches subsequent requests', ->
         signer.signature(creds, datetime)
         expect(calls.length).to.equal(callCount + 1)
@@ -108,6 +135,24 @@ describe 'AWS.Signers.V4', ->
         signer.signature(creds, newDatetime)
         expect(calls.length).to.equal(callCount + 5)
 
+      it 'uses a different cache if client is different', ->
+        signer1 = buildSignerFromService()
+        callCount = calls.length
+        signer1.signature(creds, datetime)
+        expect(calls.length).to.equal(callCount + 5)
+        signer2 = buildSignerFromService()
+        callCount = calls.length
+        signer2.signature(creds, datetime)
+        expect(calls.length).to.equal(callCount + 5)
+
+      it 'works when using the same client', ->
+        signer1 = buildSignerFromService()
+        callCount = calls.length
+        signer1.signature(creds, datetime)
+        expect(calls.length).to.equal(callCount + 5)
+        signer1.signature(creds, datetime)
+        expect(calls.length).to.equal(callCount + 6)
+
   describe 'stringToSign', ->
     it 'should sign correctly generated input string', ->
       expect(signer.stringToSign(datetime)).to.equal 'AWS4-HMAC-SHA256\n' +
@@ -117,7 +162,10 @@ describe 'AWS.Signers.V4', ->
 
   describe 'canonicalString', ->
     it 'sorts the search string', ->
-      req = new AWS.CloudSearchDomain({endpoint: 'host.domain.com'}).search({query: 'foo', cursor: 'initial', queryOptions: '{}'}).build()
+      req = new AWS.CloudSearchDomain({endpoint: 'host.domain.com'})
+        .search({query: 'foo', cursor: 'initial', queryOptions: '{}'})
+        .removeListener('build', AWS.CloudSearchDomain.prototype.convertGetToPost)
+        .build()
       signer = new AWS.Signers.V4(req.httpRequest, 'cloudsearchdomain')
       expect(signer.canonicalString().split('\n')[2]).to.equal('cursor=initial&format=sdk&pretty=true&q=foo&q.options=%7B%7D')
 
@@ -144,6 +192,10 @@ describe 'AWS.Signers.V4', ->
 
     it 'should ignore Authorization header', ->
       signer.request.headers = {'Authorization': 'foo'}
+      expect(signer.canonicalHeaders()).to.equal('')
+
+    it 'should ignore X-Amzn-Trace-Id header', ->
+      signer.request.headers = {'X-Amzn-Trace-Id': 'foo'}
       expect(signer.canonicalHeaders()).to.equal('')
 
     it 'should lowercase all header names (not values)', ->

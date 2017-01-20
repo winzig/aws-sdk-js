@@ -39,7 +39,10 @@ beforeEach ->
 afterEach ->
   while spies.length > 0
     spy = spies.pop()
-    spy.object[spy.methodName] = spy.origMethod
+    if spy.isOwnMethod
+      spy.object[spy.methodName] = spy.origMethod
+    else
+      delete spy.object[spy.methodName]
 
 _createSpy = (name) ->
   spy = ->
@@ -52,25 +55,28 @@ _createSpy = (name) ->
       return spy.returnValue
   spy.object = this
   spy.methodName = name
+  spy.origMethod = this[name]
   spy.callFn = null
   spy.shouldReturn = false
   spy.returnValue = null
   spy.calls = []
   spy.andReturn = (value) -> spy.shouldReturn = true; spy.returnValue = value; spy
   spy.andCallFake = (fn) -> spy.callFn = fn; spy
+  spy.andCallThrough = -> spy.callFn = spy.origMethod; spy
+  if Object.prototype.hasOwnProperty.call(this, name)
+    spy.isOwnMethod = true
+  this[name] = spy
   spy
 
 _spyOn = (obj, methodName) ->
   spy = _createSpy.call(obj, methodName)
-  spy.origMethod = obj[methodName]
-  spy.andCallThrough = -> spy.callFn = spy.origMethod; spy
-  obj[methodName] = spy
   spies.push(spy)
   spy
 
-# Disable setTimeout for tests
+# Disable setTimeout for tests, but keep original in case test needs to use it
 # Warning: this might cause unpredictable results
 # TODO: refactor this out.
+global.setTimeoutOrig = global.setTimeout
 global.setTimeout = (fn) -> fn()
 
 global.expect = require('chai').expect
@@ -84,7 +90,7 @@ matchXML = (xml1, xml2) ->
       results.push(r)
   expect(results[0]).to.eql(results[1])
 
-MockService = AWS.Service.defineService 'mockService',
+MockService = AWS.Service.defineService 'mock',
   serviceIdentifier: 'mock'
   initialize: (config) ->
     AWS.Service.prototype.initialize.call(this, config)
@@ -200,6 +206,19 @@ operationsForRequests = (reqs) ->
   reqs.map (req) ->
     req.service.serviceIdentifier + '.' + req.operation
 
+MockCredentialsProvider = AWS.util.inherit(AWS.Credentials, {
+  constructor: ->
+    AWS.Credentials.call(this)
+  refresh: (cb) ->
+    if this.forceRefreshError
+      cb(AWS.util.error(new Error('mock credentials refresh error'), {code: 'MockCredentialsProviderFailure'}))
+    else
+      this.expired = false
+      this.accessKeyId = 'akid'
+      this.secretAccessKey = 'secret'
+      cb()
+})
+
 module.exports =
   AWS: AWS
   util: AWS.util
@@ -213,4 +232,4 @@ module.exports =
   mockResponses: mockResponses
   operationsForRequests: operationsForRequests
   MockService: MockService
-
+  MockCredentialsProvider: MockCredentialsProvider

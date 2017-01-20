@@ -24,8 +24,9 @@ describe 'AWS.Config', ->
 
   describe 'region', ->
     oldEnv = process.env
-    beforeEach ->
+    beforeEach (done) ->
       process.env = {}
+      done()
     afterEach ->
       process.env = oldEnv
 
@@ -58,6 +59,12 @@ describe 'AWS.Config', ->
     it 'can be set to an integer', ->
       expect(configure(maxRetries: 2).maxRetries).to.equal(2)
 
+  describe 'retryDelayOptions', ->
+    it 'defaults to "base: 100"', ->
+      expect(configure().retryDelayOptions).to.eql({base: 100})
+    it 'can set "base" to an integer', ->
+      expect(configure(retryDelayOptions: {base: 30}).retryDelayOptions).to.eql({base: 30})
+
   describe 'paramValidation', ->
     it 'defaults to true', ->
       expect(configure().paramValidation).to.equal(true)
@@ -83,6 +90,18 @@ describe 'AWS.Config', ->
   describe 'correctClockSkew', ->
     it 'defaults to false', ->
       expect(configure().correctClockSkew).to.equal(false)
+
+  describe 'customUserAgent', ->
+    it 'defaults to null', ->
+      expect(configure().customUserAgent).to.equal(null)
+
+  describe 'useAccelerateEndpoint', ->
+    it 'defaults to false', ->
+      expect(configure().useAccelerateEndpoint).to.equal(false)
+
+  describe 's3DisableBodySigning', ->
+    it 'defaults to true', ->
+      expect(configure().s3DisableBodySigning).to.equal(true)
 
   describe 'set', ->
     it 'should set a default value for a key', ->
@@ -127,11 +146,19 @@ describe 'AWS.Config', ->
       config = new AWS.Config()
       config.update(foo: 10)
       expect(config.foo).to.equal(undefined)
-
-    it 'should allow service identifiers to be set', ->
-      config = new AWS.Config()
-      config.update(s3: {endpoint: 'localhost'})
-      expect(config.s3).to.eql(endpoint: 'localhost')
+    
+    describe 'should allow', ->
+      allServices = require('../clients/all')
+      for own className, ctor of allServices
+        serviceIdentifier = className.toLowerCase()
+        ((id) ->
+          it id + ' to be set', ->
+            config = new AWS.Config()
+            params = {}
+            params[id] = {endpoint: 'localhost'}
+            config.update(params)
+            expect(config[id]).to.eql(endpoint: 'localhost')
+        )(serviceIdentifier)
 
     it 'allows unknown keys if allowUnknownKeys is set', ->
       config = new AWS.Config()
@@ -158,8 +185,9 @@ describe 'AWS.Config', ->
   describe 'getCredentials', ->
     spy = null
     config = null
-    beforeEach ->
+    beforeEach (done) ->
       spy = helpers.createSpy('getCredentials callback')
+      done()
 
     expectValid = (options, key) ->
       if options instanceof AWS.Config
@@ -220,3 +248,32 @@ describe 'AWS.config', ->
     AWS.config = {}
     expect(AWS.config).to.eql({})
     AWS.config = oldConfig
+
+  describe 'setPromisesDependency', ->
+    it 'updates promise support on requests', ->
+      utilSpy = helpers.spyOn(AWS.util, 'addPromises')
+      AWS.config.setPromisesDependency(->)
+      expect(utilSpy.calls.length).to.equal(1)
+      expect(Array.isArray(utilSpy.calls[0].arguments[0])).to.be.true
+      expect(utilSpy.calls[0].arguments[0].length).to.equal(4)
+    
+    if typeof Promise != 'undefined'
+      it 'reverts to native promises when null is passed', ->
+        # create fake promise constructor
+        P = ->
+        utilSpy = helpers.spyOn(AWS.util, 'addPromises')
+        AWS.config.setPromisesDependency(P);
+        expect(utilSpy.calls[0].arguments[1] == P).to.be.true
+        # revert promise
+        AWS.config.setPromisesDependency(null);
+        expect(utilSpy.calls[1].arguments[1] == Promise).to.be.true
+        expect(utilSpy.calls[1].arguments[1] == P).to.be.false
+
+  describe 'getPromisesDependency', ->
+    it 'returns PromisesDependency if set', ->
+      AWS.config.setPromisesDependency()
+      expect(AWS.config.getPromisesDependency()).to.be.undefined
+      P = ->
+      AWS.config.setPromisesDependency(P)
+      dep = AWS.config.getPromisesDependency()
+      expect(dep).to.equal(P)

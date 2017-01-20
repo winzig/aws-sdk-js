@@ -4,33 +4,67 @@
 
 ## Supported Services
 
-By default, the SDK ships with support for 21 AWS services. Each service object
+By default, the SDK ships with support for 55 AWS services. Each service object
 in the SDK currently provides low-level access to every API call in the
 respective AWS service. The full list of methods and their parameters are
 documented in the complete API reference documentation (linked from each
 service name in the list below).
 
-The 21 services that come with the default hosted package of the SDK are:
+The 55 services that come with the default hosted package of the SDK are:
 
+* [AWS.ACM](/AWSJavaScriptSDK/latest/AWS/ACM.html)
+* [AWS.APIGateway](/AWSJavaScriptSDK/latest/AWS/APIGateway.html)
+* [AWS.ApplicationAutoScaling](/AWSJavaScriptSDK/latest/AWS/ApplicationAutoScaling.html)
+* [AWS.AutoScaling](/AWSJavaScriptSDK/latest/AWS/AutoScaling.html)
+* [AWS.CloudFormation](/AWSJavaScriptSDK/latest/AWS/CloudFormation.html)
+* [AWS.CloudFront](/AWSJavaScriptSDK/latest/AWS/CloudFront.html)
+* [AWS.CloudHSM](/AWSJavaScriptSDK/latest/AWS/CloudHSM.html)
+* [AWS.CloudTrail](/AWSJavaScriptSDK/latest/AWS/CloudTrail.html)
 * [AWS.CloudWatch](/AWSJavaScriptSDK/latest/AWS/CloudWatch.html)
 * [AWS.CloudWatchLogs](/AWSJavaScriptSDK/latest/AWS/CloudWatchLogs.html)
+* [AWS.CloudWatchEvents](/AWSJavaScriptSDK/latest/AWS/CloudWatchEvents.html)
+* [AWS.CodeCommit](/AWSJavaScriptSDK/latest/AWS/CodeCommit.html)
+* [AWS.CodeDeploy](/AWSJavaScriptSDK/latest/AWS/CodeDeploy.html)
+* [AWS.CodePipeline](/AWSJavaScriptSDK/latest/AWS/CodePipeline.html)
 * [AWS.CognitoIdentity](/AWSJavaScriptSDK/latest/AWS/CognitoIdentity.html)
+* [AWS.CognitoIdentityServiceProvider](/AWSJavaScriptSDK/latest/AWS/CognitoIdentityServiceProvider.html)
 * [AWS.CognitoSync](/AWSJavaScriptSDK/latest/AWS/CognitoSync.html)
+* [AWS.ConfigService](/AWSJavaScriptSDK/latest/AWS/ConfigService.html)
 * [AWS.DeviceFarm](/AWSJavaScriptSDK/latest/AWS/DeviceFarm.html)
+* [AWS.DirectConnect](/AWSJavaScriptSDK/latest/AWS/DirectConnect.html)
 * [AWS.DynamoDB](/AWSJavaScriptSDK/latest/AWS/DynamoDB.html)
 * [AWS.DynamoDBStreams](/AWSJavaScriptSDK/latest/AWS/DynamoDBStreams.html)
 * [AWS.EC2](/AWSJavaScriptSDK/latest/AWS/EC2.html)
+* [AWS.ECR](/AWSJavaScriptSDK/latest/AWS/ECR.html)
+* [AWS.ECS](/AWSJavaScriptSDK/latest/AWS/ECS.html)
+* [AWS.ElastiCache](/AWSJavaScriptSDK/latest/AWS/ElastiCache.html)
+* [AWS.ElasticBeanstalk](/AWSJavaScriptSDK/latest/AWS/ElasticBeanstalk.html)
 * [AWS.ElasticTranscoder](/AWSJavaScriptSDK/latest/AWS/ElasticTranscoder.html)
+* [AWS.ELB](/AWSJavaScriptSDK/latest/AWS/ELB.html)
+* [AWS.EMR](/AWSJavaScriptSDK/latest/AWS/EMR.html)
 * [AWS.Firehose](/AWSJavaScriptSDK/latest/AWS/Firehose.html)
+* [AWS.GameLift](/AWSJavaScriptSDK/latest/AWS/GameLift.html)
+* [AWS.Inspector](/AWSJavaScriptSDK/latest/AWS/Inspector.html)
+* [AWS.Iot](/AWSJavaScriptSDK/latest/AWS/Iot.html)
+* [AWS.IotData](/AWSJavaScriptSDK/latest/AWS/IotData.html)
 * [AWS.Kinesis](/AWSJavaScriptSDK/latest/AWS/Kinesis.html)
+* [AWS.KMS](/AWSJavaScriptSDK/latest/AWS/KMS.html)
 * [AWS.Lambda](/AWSJavaScriptSDK/latest/AWS/Lambda.html)
 * [AWS.MarketplaceCommerceAnalytics](/AWSJavaScriptSDK/latest/AWS/MarketplaceCommerceAnalytics.html)
 * [AWS.MobileAnalytics](/AWSJavaScriptSDK/latest/AWS/MobileAnalytics.html)
 * [AWS.MachineLearning](/AWSJavaScriptSDK/latest/AWS/MachineLearning.html)
 * [AWS.OpsWorks](/AWSJavaScriptSDK/latest/AWS/OpsWorks.html)
+* [AWS.RDS](/AWSJavaScriptSDK/latest/AWS/RDS.html)
+* [AWS.Redshift](/AWSJavaScriptSDK/latest/AWS/Redshift.html)
+* [AWS.Route53](/AWSJavaScriptSDK/latest/AWS/Route53.html)
+* [AWS.Route53Domains](/AWSJavaScriptSDK/latest/AWS/Route53Domains.html)
 * [AWS.S3](/AWSJavaScriptSDK/latest/AWS/S3.html)
+* [AWS.ServiceCatalog](/AWSJavaScriptSDK/latest/AWS/ServiceCatalog.html)
+* [AWS.SES](/AWSJavaScriptSDK/latest/AWS/SES.html)
 * [AWS.SNS](/AWSJavaScriptSDK/latest/AWS/SNS.html)
 * [AWS.SQS](/AWSJavaScriptSDK/latest/AWS/SQS.html)
+* [AWS.SSM](/AWSJavaScriptSDK/latest/AWS/SSM.html)
+* [AWS.StorageGateway](/AWSJavaScriptSDK/latest/AWS/StorageGateway.html)
 * [AWS.STS](/AWSJavaScriptSDK/latest/AWS/STS.html)
 * [AWS.WAF](/AWSJavaScriptSDK/latest/AWS/WAF.html)
 

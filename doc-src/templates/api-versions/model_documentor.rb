@@ -12,6 +12,15 @@ module Documentor
     end
     docs = docs.gsub(/\{(\S+)\}/, '`{\1}`')
     docs = docs.gsub(/\s+/, ' ').strip
+    ## The markdown to html converter incorrectly replaces underscores and asterisks in 'code' tags with 'em' tags.
+    ## html escape these symbols to get around this.
+    docs = docs.gsub(/<code>(.+?)<\/code>/m) do
+      ## strip out extraneous code blocks
+      text = $1.gsub('`','')
+      text = text.gsub('_', '&#95;')
+      text = text.gsub('*', '&#42;')
+      "<code>#{text}</code>"
+    end
     docs == '' ? nil : docs
   end
 
@@ -80,7 +89,7 @@ class MethodDocumentor
 
   attr_reader :lines
 
-  def initialize(operation_name, operation, api, klass, options = {})
+  def initialize(operation_name, operation, api, klass, options = {}, examples = {})
     desc = documentation(operation)
     desc ||= "Calls the #{method_name(operation_name, false)} API operation."
     desc = desc.gsub(/^\s+/, '').strip
@@ -95,6 +104,16 @@ class MethodDocumentor
 
     @lines << "@param params [Object]"
     @lines += shapes(api, operation['input'], options).map {|line| "  " + line }
+
+    if examples
+      examples.each do |example|
+        @lines << "@example #{example['title']}"
+        @lines << ""
+        @lines << " /* #{example['description']} */"
+        @lines << ""
+        @lines << generate_shared_example(api, example, klass, method_name(operation_name)).split("\n").map {|line| "  " + line}
+      end
+    end
 
     ## @example tag
     @lines << "@example Calling the #{method_name(operation_name)} operation"
@@ -132,6 +151,16 @@ class MethodDocumentor
       @lines << "@see #{operation['documentation_url']}"
       @lines << "  #{api['serviceAbbreviation']} Documentation for #{operation_name}"
     end
+
+    ## Service Reference
+    if api['metadata']['uid']
+      @lines << '<div class="tags">'
+      @lines << '<p class="tag_title">Service Reference:</p>'
+      @lines << '<ul class="see">'
+      @lines << '<li><a href="/goto/WebAPI/' + api['metadata']['uid'] + '/' + operation_name + '">' + operation_name +  '</a></li>'
+      @lines << '</ul>'
+      @lines << '</div>'
+    end
   end
 
   def shapes(api, rules, options = {})
@@ -151,6 +180,144 @@ class MethodDocumentor
 
   def generate_example(api, klass, name, input, options = {})
     ExampleShapeVisitor.new(api, options).example(klass, name, input)
+  end
+
+  def generate_shared_example(api, example, klass, name)
+    SharedExampleVisitor.new(api, example, klass, name).example
+  end
+
+end
+
+class SharedExampleVisitor
+  def initialize(api, example, klass, name)
+    @api = api
+    @example = example
+    @klass = klass
+    @name = name
+    @comments = example['comments']
+  end
+
+  def shape_type(type)
+    case type
+      when 'structure' then 'StructureShape'
+      when 'list' then 'ListShape'
+      when 'map' then 'MapShape'
+      when 'boolean' then 'BooleanShape'
+      when 'timestamp' then 'TimestampShape'
+      when 'float', 'double', 'bigdecimal' then 'FloatShape'
+      when 'integer', 'long', 'short', 'biginteger' then 'IntegerShape'
+      when 'string', 'character' then 'StringShape'
+      when 'base64' then 'Base64Shape'
+      when 'binary', 'blob' then 'BinaryShape'
+      else type
+    end
+  end
+
+  def example
+    operation = @name[0].upcase + @name[1..-1]
+    operation_input = @api['operations'][operation]['input']
+    if operation_input
+      input_shape_name = operation_input['shape']
+      input_shape = @api['shapes'][input_shape_name]
+      input = visit(input_shape, @example['input'] || {}, "", [], @comments['input'])
+    else
+      input = "{}"
+    end
+
+    lines = ["var params = #{input};"]
+    lines << "#{@klass.downcase}.#{@name}(params, function(err, data) {"
+    lines << "  if (err) console.log(err, err.stack); // an error occurred"
+    lines << "  else     console.log(data);           // successful response"
+
+    operation_output = @api['operations'][operation]['output']
+    if operation_output
+      output_shape_name = operation_output['shape']
+      output_shape = @api['shapes'][output_shape_name]
+      if output = visit(output_shape, @example['output'] || {}, "  ", [], @comments['output'])
+        lines << "  /*"
+        lines << "  data = #{output}"
+        lines << "  */"
+      end
+    end
+
+
+    lines << "});"
+    lines.join("\n")
+  end
+
+  def visit(shape, value, indent, path, comments)
+    case shape_type(shape['type'])
+      when 'StructureShape' then structure(shape, value, indent, path, comments)
+      when 'MapShape' then map(shape, value, indent, path, comments)
+      when 'ListShape' then list(shape, value, indent, path, comments)
+      when 'StringShape' then value.inspect
+      when 'TimestampShape' then "<Date Representation>"
+      when 'BinaryShape' then "<Binary String>"
+      else value
+    end
+  end
+
+  def structure(shape, value, indent, path, comments)
+    lines = ["{"]
+    value_length = value.length
+    value.each_with_index do |(key, val), index|
+      path << ".#{key}"
+      comment = apply_comment(path, comments)
+      shape_name = shape['members'][key]['shape']
+      shape_val = visit(@api['shapes'][shape_name], val, "#{indent} ", path, comments)
+      if index < value_length - 1 then
+        comment = ", " + comment
+      end
+      lines << "#{indent} #{key}: #{shape_val}#{comment}"
+      path.pop
+    end
+    lines << "#{indent}}"
+    lines.join("\n")
+  end
+
+  def map(shape, value, indent, path, comments)
+    lines = ["{"]
+    value_length = value.length
+    value.each_with_index do |(key, val), index|
+      path << ".#{key}"
+      comment = apply_comment(path, comments)
+      shape_name = shape['value']['shape']
+      shape_val = visit(@api['shapes'][shape_name], val, "#{indent}  ", path, comments)
+      if index < value_length - 1 then
+        comment = ", " + comment
+      end
+      lines << "#{indent} \"#{key}\": #{shape_val}#{comment}"
+      path.pop
+    end
+    lines << "#{indent}}"
+    lines.join("\n")
+  end
+
+  def list(shape, value, indent, path, comments)
+    lines = ["["]
+    value_length = value.length
+    value.each_with_index do |member, index|
+      path << "[#{index}]"
+      comment = apply_comment(path, comments)
+      shape_name = shape['member']['shape']
+      shape_val = visit(@api['shapes'][shape_name], member, "#{indent} ", path, comments)
+      if index < value_length - 1 then
+        comment = ", " + comment
+      end
+      lines << "#{indent}   #{shape_val}#{comment}"
+      path.pop
+    end
+    lines << "#{indent}]"
+    lines.join("\n")
+  end
+
+  def apply_comment(path, comments)
+    key = path.join().sub(/^\./, '')
+    if comments && comments[key]
+      "// #{comments[key]}"
+    else
+      ""
+    end
   end
 
 end
@@ -375,6 +542,10 @@ doc_client
     if rules['enum']
       @lines << "#{prefix}   Possible values include:"
       @lines += rules['enum'].map{|v| "#{prefix}   * `#{v.inspect}`" }
+    end
+
+    if rules['idempotencyToken']
+      @lines << "#{prefix}   If a token is not provided, the SDK will use a version 4 UUID."
     end
 
   end

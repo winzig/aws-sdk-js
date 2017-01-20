@@ -27,6 +27,20 @@ describe 'uriEscape', ->
   it 'encodes utf8 characters', ->
     expect(e('ёŝ')).to.equal('%D1%91%C5%9D')
 
+describe 'readFileSync', ->
+  readFileSync = AWS.util.readFileSync;
+
+  if AWS.util.isBrowser()
+    it 'will always return null in the browser', ->
+      expect(readFileSync('fake/path')).to.eql(null)
+  else
+    errorFound = false
+    try
+      readFileSync('fake/path');
+    catch err
+      errorFound = true
+    expect(errorFound).to.equal(true)
+
 describe 'uriEscapePath', ->
 
   e = AWS.util.uriEscapePath
@@ -193,11 +207,14 @@ describe 'AWS.util.ini', ->
       invalidline
       key1=value1 ; another comment
         key2 = value2;value3
+        key3 = value4 # yet another comment
       [emptysection]
+      #key1=value1
       '''
       map = AWS.util.ini.parse(ini)
       expect(map.section1.key1).to.equal('value1')
       expect(map.section1.key2).to.equal('value2;value3')
+      expect(map.section1.key3).to.equal('value4')
       expect(map.emptysection).to.equal(undefined)
 
     it 'ignores leading and trailing white space', ->
@@ -284,7 +301,7 @@ describe 'AWS.util.crypto', ->
 
     if AWS.util.isNode()
       it 'handles streams in async interface', (done) ->
-        Transform = AWS.util.nodeRequire('stream').Transform
+        Transform = AWS.util.stream.Transform
         tr = new Transform
         tr._transform = (data, encoding, callback) -> callback(null, data)
         tr.push(new AWS.util.Buffer(input))
@@ -330,7 +347,7 @@ describe 'AWS.util.crypto', ->
 
     if AWS.util.isNode()
       it 'handles streams in async interface', (done) ->
-        Transform = AWS.util.nodeRequire('stream').Transform
+        Transform = AWS.util.stream.Transform
         tr = new Transform
         tr._transform = (data, enc, callback) -> callback(null, data)
         tr.push(new AWS.util.Buffer(input))
@@ -538,64 +555,34 @@ describe 'AWS.util.base64', ->
       expect(base64.encode('foo')).to.equal('Zm9v')
       expect(base64.encode('ёŝ')).to.equal('0ZHFnQ==')
 
+    it 'encodes the given buffer', ->
+      expect(base64.encode(new AWS.util.Buffer('foo'))).to.equal('Zm9v')
+      expect(base64.encode(new AWS.util.Buffer('ёŝ'))).to.equal('0ZHFnQ==')
+
+    it 'throws if a number is supplied', ->
+      err = null
+      try
+        base64.encode(3.14)
+      catch e
+        err = e
+      expect(err.message).to.equal('Cannot base64 encode number 3.14')
+
   describe 'decode', ->
     it 'decodes the given string', ->
       expect(base64.decode('Zm9v').toString()).to.equal('foo')
       expect(base64.decode('0ZHFnQ==').toString()).to.equal('ёŝ')
 
-describe 'AWS.util.jamespath', ->
-  query = AWS.util.jamespath.query
-  find = AWS.util.jamespath.find
+    it 'decodes the given buffer', ->
+      expect(base64.decode(new AWS.util.Buffer('Zm9v', 'base64')).toString()).to.equal('foo')
+      expect(base64.decode(new AWS.util.Buffer('0ZHFnQ==', 'base64')).toString()).to.equal('ёŝ')
 
-  describe 'query', ->
-    it 'can find a toplevel element of a data structure', ->
-      expect(query('foo', foo: 'value')).to.eql(['value'])
-
-    it 'can find a nested element of a data structure', ->
-      expect(query('foo.bar.baz', foo: bar: baz: 'value')).to.eql(['value'])
-
-    it 'can index an element (positive and negative indexes)', ->
-      data = foo: bar: [{baz: 'wrong'}, {baz: 'right'}, {baz: 'wrong'}]
-      expect(query('foo.bar[1].baz', data)).to.eql(['right'])
-      expect(query('foo.bar[-2].baz', data)).to.eql(['right'])
-
-    it 'can index an element with wildcard', ->
-      data = foo: bar: [{baz: 'wrong'}, {baz: 'right'}, {baz: 'wrong'}]
-      expect(query('foo.bar[*].baz', data)).to.eql(['wrong', 'right', 'wrong'])
-
-    it 'returns empty array if element is not found', ->
-      data = foo: notBar: baz: 'value'
-      expect(query('foo.bar.baz', data)).to.eql([])
-
-    it 'allows multiple expressions to be ORed', ->
-      data = foo: {key1: 'wrong'}, bar: {key2: 'right'}
-      expect(query('foo.key2 || bar.key2', data)).to.eql(['right'])
-
-    it 'returns multiple matches if a wildcard is used', ->
-      data = foo:
-        child1: bar: 'value1'
-        child2: bar: 'value2'
-        child3: bar: 'value3'
-      expect(query('foo.*.bar', data)).to.eql(['value1', 'value2', 'value3'])
-
-    it 'can support wildcard on both token and index', ->
-      data = foo:
-        child1: ['value1', 'value2']
-        child2: ['value3']
-        child4: 'notarray'
-      expect(query('foo.*[*]', data)).to.eql(['value1', 'value2', 'value3'])
-
-    it 'can support array flattening', ->
-      data = foo: [ {bar: 1}, {bar: 2}, {bar: 3} ]
-      expect(query('foo[].bar', data)).to.eql([1, 2, 3])
-
-
-  describe 'find', ->
-    it 'returns the first match of query', ->
-      expect(find('foo.*', foo: bar: 1, baz: 2)).to.equal(1)
-
-    it 'returns null if no match is found', ->
-      expect(find('invalid.*', foo: bar: 1, baz: 2)).not.to.exist
+    it 'throws if a number is supplied', ->
+      err = null
+      try
+        base64.decode(3.14)
+      catch e
+        err = e
+      expect(err.message).to.equal('Cannot base64 decode number 3.14')
 
 describe 'AWS.util.hoistPayloadMember', ->
   hoist = AWS.util.hoistPayloadMember
@@ -689,3 +676,293 @@ describe 'AWS.util.extractRequestId', ->
     req.send()
     AWS.util.extractRequestId(req.response)
     expect(req.response.error.requestId).to.equal('RequestId1')
+
+describe 'AWS.util.addPromises', ->
+  beforeEach ->
+    AWS.config.setPromisesDependency()
+
+  afterEach ->
+    delete AWS.Request.prototype.promise
+    delete AWS.S3.ManagedUpload.prototype.promise
+    delete AWS.Credentials.prototype.getPromise
+    delete AWS.Credentials.prototype.refreshPromise
+    delete AWS.CredentialProviderChain.prototype.resolvePromise
+
+  if typeof Promise != 'undefined'
+    describe 'with native promises', ->
+      it 'can use native promises', ->
+        AWS.util.addPromises(AWS.Request)
+        expect(typeof AWS.Request.prototype.promise).to.equal('function')
+
+      it 'will use specified dependency over native promises', ->
+        service = new helpers.MockService()
+        count = 0
+        P = -> count++
+        AWS.util.addPromises(AWS.Request, P)
+        req = service.makeRequest('mockMethod')
+        expect(typeof AWS.Request.prototype.promise).to.equal('function')
+        reqSpy = helpers.spyOn(req, 'promise').andCallThrough()
+        req.promise()
+        expect(count).to.equal(reqSpy.calls.length)
+
+  else
+    describe 'without native promises', ->
+      it 'will not add promise method if no dependency is provided', ->
+        AWS.util.addPromises(AWS.Request)
+        expect(typeof AWS.Request.prototype.promise).to.equal('undefined')
+
+      it 'will add promise method if dependency is provided', ->
+        P = ->
+        AWS.util.addPromises(AWS.Request, P)
+        expect(typeof AWS.Request.prototype.promise).to.equal('function')
+
+      it 'will remove promise method if dependency is not a function', ->
+        P = ->
+        AWS.util.addPromises(AWS.Request, P)
+        expect(typeof AWS.Request.prototype.promise).to.equal('function')
+        AWS.util.addPromises(AWS.Request, null)
+        expect(typeof AWS.Request.prototype.promise).to.equal('undefined')
+
+  it 'adds promises to supported constructors', ->
+    constructors = [AWS.Request, AWS.S3.ManagedUpload, AWS.Credentials, AWS.CredentialProviderChain]
+    P = ->
+    AWS.util.addPromises(constructors, P)
+    expect(typeof AWS.Request.prototype.promise).to.equal('function')
+    expect(typeof AWS.S3.ManagedUpload.prototype.promise).to.equal('function')
+    expect(typeof AWS.Credentials.prototype.getPromise).to.equal('function')
+    expect(typeof AWS.Credentials.prototype.refreshPromise).to.equal('function')
+    expect(typeof AWS.CredentialProviderChain.prototype.resolvePromise).to.equal('function')
+
+  it 'deletes promises from all supported constructors when promise dependency is not a function', ->
+    constructors = [AWS.Request, AWS.S3.ManagedUpload, AWS.Credentials, AWS.CredentialProviderChain]
+    P = ->
+    AWS.util.addPromises(constructors, P)
+    AWS.util.addPromises(constructors, 'not a function')
+    expect(AWS.Request.prototype.promise).to.be.undefined
+    expect(AWS.S3.ManagedUpload.prototype.promise).to.be.undefined
+    expect(AWS.Credentials.prototype.getPromise).to.be.undefined
+    expect(AWS.Credentials.prototype.refreshPromise).to.be.undefined
+    expect(AWS.CredentialProviderChain.prototype.resolvePromise).to.be.undefined
+
+describe 'AWS.util.isDualstackAvailable', ->
+  metadata = require('../apis/metadata.json')
+
+  beforeEach ->
+    metadata.mock = {name: 'MockService'}
+
+  afterEach ->
+    delete metadata.mock
+
+  if AWS.util.isNode()
+    it 'accepts service identifier string as argument', ->
+      expect(AWS.util.isDualstackAvailable('mock')).to.be.false
+      metadata.mock.dualstackAvailable = true
+      expect(AWS.util.isDualstackAvailable('mock')).to.be.true
+
+    it 'accepts service client instance as argument', ->
+      service = new helpers.MockService()
+      expect(AWS.util.isDualstackAvailable(service)).to.be.false
+      metadata.mock.dualstackAvailable = true
+      expect(AWS.util.isDualstackAvailable(service)).to.be.true
+
+    it 'accepts service constructor as argument', ->
+      expect(AWS.util.isDualstackAvailable(helpers.MockService)).to.be.false
+      metadata.mock.dualstackAvailable = true
+      expect(AWS.util.isDualstackAvailable(helpers.MockService)).to.be.true
+
+  it 'returns false if invalid service is given as argument', ->
+    expect(AWS.util.isDualstackAvailable(null)).to.be.false
+    expect(AWS.util.isDualstackAvailable('invalid')).to.be.false
+    expect(AWS.util.isDualstackAvailable({})).to.be.false
+
+describe 'AWS.util.calculateRetryDelay', ->
+  beforeEach ->
+    helpers.spyOn(Math, 'random').andReturn 1
+
+  it 'exponentially increases delay as retryCount increases', ->
+    delay1 = AWS.util.calculateRetryDelay(1)
+    delay2 = AWS.util.calculateRetryDelay(2)
+    delay3 = AWS.util.calculateRetryDelay(3)
+    expect(delay2).to.equal(delay1 * 2)
+    expect(delay3).to.equal(delay1 * 4)
+
+  it 'has random jitter', ->
+    delay1 = AWS.util.calculateRetryDelay(1)
+    helpers.spyOn(Math, 'random').andReturn 0.5
+    delay2 = AWS.util.calculateRetryDelay(1)
+    expect(delay2).to.not.equal(delay1)
+
+  it 'allows configuration of base delay', ->
+    delay = AWS.util.calculateRetryDelay(1, { base: 1000 })
+    expect(delay).to.equal(2000)
+
+  it 'allows custom backoff function', ->
+    customBackoff = (retryCount) ->
+      return 100 * Math.pow(3, retryCount)
+    delay = AWS.util.calculateRetryDelay(2, { customBackoff: customBackoff })
+    expect(delay).to.equal(900)
+
+describe 'AWS.util.userAgent', ->
+  it 'should include an identifier for the browser SDK', ->
+    helpers.spyOn(AWS.util, 'isBrowser').andReturn true
+    expect(AWS.util.userAgent()).to.match(/^aws-sdk-js/)
+
+  it 'should include an identifier for the node SDK', ->
+    helpers.spyOn(AWS.util, 'isBrowser').andReturn false
+    expect(AWS.util.userAgent()).to.match(/^aws-sdk-nodejs/)
+
+  it 'should include the current SDK version number', ->
+    expect(AWS.util.userAgent()).to.have.string(AWS.VERSION)
+
+  it 'should include the engine when not running in a browser', ->
+    helpers.spyOn(AWS.util, 'isBrowser').andReturn false
+    helpers.spyOn(AWS.util, 'engine').andReturn 'ENGINE'
+    expect(AWS.util.userAgent()).to.match(/ENGINE$/)
+
+if AWS.util.isNode()
+  describe 'AWS.util.engine', ->
+    it 'should include the platform and version supplied by the global process variable', ->
+      engine = AWS.util.engine()
+      expect(engine).to.match(new RegExp(process.platform))
+      expect(engine).to.match(new RegExp(process.version))
+
+    it 'should include the execution environment if supplied as an environment variable', ->
+      previousValue = process.env.AWS_EXECUTION_ENV
+      process.env.AWS_EXECUTION_ENV = 'Lambda'
+      try
+        expect(AWS.util.engine()).to.match(/exec-env\/Lambda$/)
+      finally
+        process.env.AWS_EXECUTION_ENV = previousValue
+
+  describe 'AWS.util.handleRequestWithRetries', ->
+    http = require('http')
+    app = null; httpRequest = null; spy = null
+    options = {maxRetries: 2}
+    httpClient = AWS.HttpClient.getInstance()
+
+    sendRequest = (cb) ->
+      AWS.util.handleRequestWithRetries httpRequest, options, cb
+
+    getport = (cb, startport) ->
+      port = startport or 45678
+      srv = require('net').createServer()
+      srv.on 'error', -> getport(cb, port + 1)
+      srv.listen port, ->
+        srv.once 'close', -> cb(port)
+        srv.close()
+
+    server = http.createServer (req, resp) ->
+      app(req, resp)
+
+    beforeEach (done) ->
+      httpRequest = new AWS.HttpRequest('http://127.0.0.1')
+      spy = helpers.spyOn(httpClient, 'handleRequest').andCallThrough()
+      getport (port) ->
+        httpRequest.endpoint.port = port
+        server.listen(port)
+        done()
+
+    afterEach ->
+      server.close()
+
+    it 'does not retry if request is successful', (done) ->
+      app = (req, resp) ->
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(err).to.be.null
+        expect(data).to.equal('FOOBAR')
+        expect(spy.calls.length).to.equal(1)
+        done()
+
+    it 'retries for TimeoutError', (done) ->
+      forceTimeout = true
+      helpers.spyOn(http.ClientRequest.prototype, 'setTimeout').andCallFake (timeout, cb) ->
+        if forceTimeout
+          process.nextTick(cb)
+          forceTimeout = false
+      app = (req, resp) ->
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(err).to.be.null
+        expect(data).to.equal('FOOBAR')
+        expect(spy.calls.length).to.equal(2)
+        done()
+
+    it 'retries up to the maxRetries specified', (done) ->
+      helpers.spyOn(http.ClientRequest.prototype, 'setTimeout').andCallFake (timeout, cb) ->
+        process.nextTick(cb)
+      app = (req, resp) ->
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(data).to.be.undefined
+        expect(err).to.not.be.null
+        expect(err.code).to.equal('TimeoutError')
+        expect(err.retryable).to.be.true
+        expect(spy.calls.length).to.equal(options.maxRetries + 1)
+        done()
+
+    it 'retries errors with status code 5xx', (done) ->
+      app = (req, resp) ->
+        resp.writeHead(500, {})
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(data).to.be.undefined
+        expect(err).to.not.be.null
+        expect(err.retryable).to.be.true
+        expect(spy.calls.length).to.equal(options.maxRetries + 1)
+        done()
+
+    it 'retries errors with status code 429', (done) ->
+      app = (req, resp) ->
+        resp.writeHead(429, {})
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(data).to.be.undefined
+        expect(err).to.not.be.null
+        expect(err.retryable).to.be.true
+        expect(spy.calls.length).to.equal(options.maxRetries + 1)
+        done()
+
+    it 'does not retry non-retryable errors', (done) ->
+      app = (req, resp) ->
+        resp.writeHead(400, {})
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(data).to.be.undefined
+        expect(err).to.not.be.null
+        expect(err.retryable).to.be.false
+        expect(spy.calls.length).to.equal(1)
+        done()
+
+    it 'retries errors with retryable set to true', (done) ->
+      helpers.spyOn(AWS.util, 'error').andReturn {retryable: true}
+      app = (req, resp) ->
+        resp.writeHead(400, {})
+        resp.write('FOOBAR')
+        resp.end()
+      sendRequest (err, data) ->
+        expect(data).to.be.undefined
+        expect(err).to.not.be.null
+        expect(err.retryable).to.be.true
+        expect(spy.calls.length).to.equal(options.maxRetries + 1)
+        done()
+
+    it 'defaults to not retrying if maxRetries not specified', (done) ->
+      helpers.spyOn(AWS.util, 'error').andReturn {retryable: true}
+      app = (req, resp) ->
+        resp.writeHead(400, {})
+        resp.write('FOOBAR')
+        resp.end()
+      options = {}
+      sendRequest (err, data) ->
+        expect(data).to.be.undefined
+        expect(err).to.not.be.null
+        expect(spy.calls.length).to.equal(1)
+        done()
+
